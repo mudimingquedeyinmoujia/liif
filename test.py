@@ -7,7 +7,7 @@ import yaml
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
+from torchvision.utils import make_grid
 import datasets
 import models
 import utils
@@ -27,6 +27,38 @@ def batched_predict(model, inp, coord, cell, bsize):
         pred = torch.cat(preds, dim=1)
     return pred
 
+def eval_quanlitative(loader,model,img_num=4,eval_bsize=30000):
+    model.eval()
+    h=512
+    w=512
+    coord = utils.make_coord((h, w)).cuda()  # n_sample,2  x,y in 图像坐标
+    cell = torch.ones_like(coord)
+    cell[:, 0] *= 2 / h
+    cell[:, 1] *= 2 / w
+
+    pbar = tqdm(loader, leave=False, desc='val_quanlitative')
+    batch_img_list=[]
+    for batch in pbar:
+        for k, v in batch.items():
+            batch[k] = v.cuda()
+
+        predlist=[]
+        gtlist=[]
+        for single,single_gt in zip(batch['inp'][:img_num],batch['gt512'][:img_num]):
+            inp = (single - 0.5) / 0.5
+            pred = batched_predict(model, inp.unsqueeze(0),
+                               coord.unsqueeze(0), cell.unsqueeze(0), bsize=eval_bsize)[0]
+            # pixels 3 --> H W C --> C H W 无batch维度
+            pred = (pred * 0.5 + 0.5).clamp(0, 1).view(h, w, 3).permute(2, 0, 1)
+            predlist.append(pred)
+            gtlist.append(single_gt)
+
+        batch_img_pred=torch.stack(predlist) # img_num,3,H,W
+        batch_img_gt=torch.stack(gtlist) # img_num,3,H,W
+        batch_img=make_grid(torch.cat([batch_img_gt,batch_img_pred]),nrow=img_num)
+        batch_img_list.append(batch_img)
+
+    return batch_img_list
 
 def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
               verbose=False):
@@ -74,7 +106,7 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
 
         if eval_type is not None: # reshape for shaving-eval
             ih, iw = batch['inp'].shape[-2:]
-            s = math.sqrt(batch['coord'].shape[1] / (ih * iw))
+            s = math.sqrt(batch['coord'].shape[1] / (ih * iw)) # 缩放比率
             shape = [batch['inp'].shape[0], round(ih * s), round(iw * s), 3]
             pred = pred.view(*shape) \
                 .permute(0, 3, 1, 2).contiguous()

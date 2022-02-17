@@ -1,0 +1,57 @@
+train_dataset:
+  dataset:
+    name: facescape-folder
+    args:
+      data_dir: ./facescapeDataset/face_train
+      sample_num: 8000
+  wrapper:
+    name: facescape-liif-wrapper
+    args:
+      inp_size: 64
+      scale_max: 4
+      random_sample: 4096
+  batch_size: 16
+
+val_dataset:
+  dataset:
+    name: facescape-folder
+    args:
+      data_dir: ./facescapeDataset/face_valid
+      sample_num: 80
+  wrapper:
+    name: facescape-valid-wrapper
+    args:
+      inp_size: 64
+      scale_max: 4
+      random_sample: 4096
+  batch_size: 16
+
+data_norm:
+  inp: {sub: [0.5], div: [0.5]}
+  gt: {sub: [0.5], div: [0.5]}
+
+model:
+  name: liif
+  args:
+    encoder_spec:
+      name: edsr-baseline
+      args:
+        no_upsampling: true
+    imnet_spec:
+      name: mlp
+      args:
+        out_dim: 3
+        hidden_list: [256, 256, 256, 256]
+
+optimizer:
+  name: adam
+  args:
+    lr: 1.e-4
+epoch_max: 1000
+multi_step_lr:
+  milestones: [200, 400, 600, 800]
+  gamma: 0.5
+
+epoch_val: 1
+epoch_save: 100
+epoch_val_q: 50
