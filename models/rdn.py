@@ -108,9 +108,9 @@ class RDN(nn.Module):
         x += f__1
 
         if self.args.no_upsampling:
-            return x
+            return [x]
         else:
-            return self.UPNet(x)
+            return [self.UPNet(x)]
 
 
 @register('rdn')

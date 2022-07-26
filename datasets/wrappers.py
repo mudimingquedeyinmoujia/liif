@@ -27,7 +27,7 @@ class SRImplicitPaired(Dataset):
     def __getitem__(self, idx):
         img_lr, img_hr = self.dataset[idx]
 
-        s = img_hr.shape[-2] // img_lr.shape[-2] # assume int scale
+        s = img_hr.shape[-2] // img_lr.shape[-2]  # assume int scale
         if self.inp_size is None:
             h_lr, w_lr = img_lr.shape[-2:]
             img_hr = img_hr[:, :h_lr * s, :w_lr * s]
@@ -85,6 +85,62 @@ def resize_fn(img, size):
             transforms.ToPILImage()(img)))
 
 
+@register('sr-cut-downsampled')
+class CutDownsampled(Dataset):
+    def __init__(self, dataset, inp_size=None, augment=False, norm=True):
+        self.dataset = dataset
+        self.inp_size = inp_size
+        self.augment = augment
+        self.norm = norm
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx]
+        # crop_size = int(self.inp_size * (1 + random.random()))
+        crop_size=1024
+        img_h,img_w=img.shape[-2:]
+        if crop_size>=min(img_h,img_w):
+            crop_size_t=min(img_h,img_w)
+            x0 = random.randint(0, img_h - crop_size_t)
+            y0 = random.randint(0, img_w - crop_size_t)
+            img_hr = img[:, x0:x0 + crop_size_t, y0:y0 + crop_size_t]
+            img_hr = resize_fn(img_hr, crop_size)
+            img_lr = resize_fn(img_hr, self.inp_size)
+        else:
+            x0 = random.randint(0, img_h - crop_size)
+            y0 = random.randint(0, img_w - crop_size)
+            img_hr = img[:, x0:x0 + crop_size, y0:y0 + crop_size]
+            img_lr = resize_fn(img_hr, self.inp_size)
+        if self.augment:
+            hflip = random.random() < 0.5
+            vflip = random.random() < 0.5
+            dflip = random.random() < 0.5
+
+            def augment(x):
+                if hflip:
+                    x = x.flip(-2)
+                if vflip:
+                    x = x.flip(-1)
+                if dflip:
+                    x = x.transpose(-2, -1)
+                return x
+
+            img_lr = augment(img_lr)
+            img_hr = augment(img_hr)
+
+        if self.norm:
+            img_lr = (img_lr - 0.5) / 0.5
+            img_hr = (img_hr - 0.5) / 0.5
+
+        return {
+            'lr': img_lr,
+            'hr': img_hr,
+            'crop_size': crop_size
+        }
+
+
 @register('sr-implicit-downsampled')
 class SRImplicitDownsampled(Dataset):
 
@@ -109,7 +165,7 @@ class SRImplicitDownsampled(Dataset):
         if self.inp_size is None:
             h_lr = math.floor(img.shape[-2] / s + 1e-9)
             w_lr = math.floor(img.shape[-1] / s + 1e-9)
-            img = img[:, :round(h_lr * s), :round(w_lr * s)] # assume round int
+            img = img[:, :round(h_lr * s), :round(w_lr * s)]  # assume round int
             img_down = resize_fn(img, (h_lr, w_lr))
             crop_lr, crop_hr = img_down, img
         else:
